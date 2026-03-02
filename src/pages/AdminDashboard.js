@@ -77,7 +77,6 @@ const AdminDashboard = () => {
   
   // Modal states for sidebar components
   const [showAnnouncementModal, setShowAnnouncementModal] = useState(false);
-  const [showShopAlertModal, setShowShopAlertModal] = useState(false);
   const [showComplaintsModal, setShowComplaintsModal] = useState(false);
   const [showTransactionsModal, setShowTransactionsModal] = useState(false);
   const [showTopupsModal, setShowTopupsModal] = useState(false);
@@ -499,10 +498,6 @@ const AdminDashboard = () => {
           <button onClick={() => { setShowAnnouncementModal(true); setIsSidebarOpen(false); }}
             className="w-full flex items-center gap-3 px-4 py-3 text-dark-300 hover:text-white hover:bg-dark-700/50 rounded-xl transition-all">
             <Bell className="w-5 h-5" /><span>Announcements</span>
-          </button>
-          <button onClick={() => { setShowShopAlertModal(true); setIsSidebarOpen(false); }}
-            className="w-full flex items-center gap-3 px-4 py-3 text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-xl transition-all">
-            <AlertTriangle className="w-5 h-5" /><span>Shop Alert</span>
           </button>
           <button onClick={() => { setShowComplaintsModal(true); setIsSidebarOpen(false); }}
             className="w-full flex items-center justify-between px-4 py-3 text-dark-300 hover:text-white hover:bg-dark-700/50 rounded-xl transition-all">
@@ -1021,9 +1016,6 @@ const AdminDashboard = () => {
 
       {/* Announcement Modal */}
       <AnnouncementAdmin isOpen={showAnnouncementModal} onClose={() => setShowAnnouncementModal(false)} />
-
-      {/* Shop Alert Modal */}
-      <AnnouncementAdmin isOpen={showShopAlertModal} onClose={() => setShowShopAlertModal(false)} />
 
       {/* Complaints Modal */}
       <ComplaintsViewer isOpen={showComplaintsModal} onClose={() => setShowComplaintsModal(false)} />
