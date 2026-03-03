@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import Swal from 'sweetalert2';
-import { Menu, X, Users, Package, ShoppingCart, Bell, RefreshCw, Loader2, Search, Plus, Edit, Trash2, CheckCircle, XCircle, BarChart3, Wallet, User, LogOut, RotateCcw, Eye, EyeOff, Save, Banknote, DollarSign, Table2 } from 'lucide-react';
+import { Menu, X, Users, Package, ShoppingCart, Bell, RefreshCw, Loader2, Search, Plus, Edit, Trash2, CheckCircle, XCircle, BarChart3, Wallet, User, LogOut, RotateCcw, Eye, EyeOff, Save, Banknote, DollarSign, Table2, Key } from 'lucide-react';
 import BASE_URL from '../endpoints/endpoints';
 import { io as socketIO } from 'socket.io-client';
 import ProductDialog from '../components/ProductDialog';
@@ -15,6 +15,7 @@ import AgentCommissionModal from '../components/AgentCommissionModal';
 import PaymentMessagesModal from '../components/PaymentMessagesModal';
 import BeneficiaryTableModal from '../components/BeneficiaryTableModal';
 import FloatingChatButton from '../components/FloatingChatButton';
+import ExternalApiKeys from '../components/ExternalApiKeys';
 
 // Notification sound
 const notificationSound = new Audio('/notification-sound.mp3');
@@ -83,6 +84,7 @@ const AdminDashboard = () => {
   const [showCommissionModal, setShowCommissionModal] = useState(false);
   const [showPaymentMessagesModal, setShowPaymentMessagesModal] = useState(false);
   const [showBeneficiaryModal, setShowBeneficiaryModal] = useState(false);
+  const [showExternalApiModal, setShowExternalApiModal] = useState(false);
   
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -521,6 +523,10 @@ const AdminDashboard = () => {
           <button onClick={() => { setShowCommissionModal(true); setIsSidebarOpen(false); }}
             className="w-full flex items-center gap-3 px-4 py-3 text-dark-300 hover:text-white hover:bg-dark-700/50 rounded-xl transition-all">
             <DollarSign className="w-5 h-5" /><span>Commission Summary</span>
+          </button>
+          <button onClick={() => { setShowExternalApiModal(true); setIsSidebarOpen(false); }}
+            className="w-full flex items-center gap-3 px-4 py-3 text-dark-300 hover:text-white hover:bg-dark-700/50 rounded-xl transition-all">
+            <Key className="w-5 h-5" /><span>External API Keys</span>
           </button>
           <hr className="border-dark-700 my-2" />
           <button onClick={() => navigate('/profile')}
@@ -1107,6 +1113,9 @@ const AdminDashboard = () => {
 
       {/* Beneficiary Table Modal */}
       <BeneficiaryTableModal isOpen={showBeneficiaryModal} onClose={() => setShowBeneficiaryModal(false)} />
+
+      {/* External API Keys Modal */}
+      <ExternalApiKeys isOpen={showExternalApiModal} onClose={() => setShowExternalApiModal(false)} />
 
       {/* Floating Chat */}
       <FloatingChatButton currentUser={{ id: parseInt(localStorage.getItem('userId')), name: localStorage.getItem('name'), role: 'admin' }} />
