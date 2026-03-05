@@ -9,6 +9,8 @@ const formatAmount = (amount) => {
   return `GHS ${num.toLocaleString('en-GH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 };
 
+const getAuthHeaders = () => ({ Authorization: `Bearer ${localStorage.getItem('token')}` });
+
 const Storefront = ({ isOpen, onClose, userId }) => {
   const [activeTab, setActiveTab] = useState('products');
   const [storefrontProducts, setStorefrontProducts] = useState([]);
@@ -33,9 +35,9 @@ const Storefront = ({ isOpen, onClose, userId }) => {
     setLoading(true);
     try {
       const [slugRes, productsRes, availableRes] = await Promise.all([
-        axios.get(`${BASE_URL}/api/storefront/agent/${userId}/slug`),
-        axios.get(`${BASE_URL}/api/storefront/agent/${userId}/products`),
-        axios.get(`${BASE_URL}/api/storefront/agent/${userId}/products/available`)
+        axios.get(`${BASE_URL}/api/storefront/agent/${userId}/slug`, { headers: getAuthHeaders() }),
+        axios.get(`${BASE_URL}/api/storefront/agent/${userId}/products`, { headers: getAuthHeaders() }),
+        axios.get(`${BASE_URL}/api/storefront/agent/${userId}/products/available`, { headers: getAuthHeaders() })
       ]);
 
       if (slugRes.data.success) setStorefrontSlug(slugRes.data.slug);
@@ -51,7 +53,7 @@ const Storefront = ({ isOpen, onClose, userId }) => {
   const fetchReferralSummary = useCallback(async () => {
     if (!userId) return;
     try {
-      const res = await axios.get(`${BASE_URL}/api/storefront/agent/${userId}/referrals`);
+      const res = await axios.get(`${BASE_URL}/api/storefront/agent/${userId}/referrals`, { headers: getAuthHeaders() });
       if (res.data.success) {
         setReferralSummary({ orders: res.data.orders, stats: res.data.stats });
       }
@@ -139,7 +141,7 @@ const Storefront = ({ isOpen, onClose, userId }) => {
 
     if (result.isConfirmed) {
       try {
-        await axios.delete(`${BASE_URL}/api/storefront/agent/${userId}/products/${productId}`);
+        await axios.delete(`${BASE_URL}/api/storefront/agent/${userId}/products/${productId}`, { headers: getAuthHeaders() });
         Swal.fire({ icon: 'success', title: 'Removed!', timer: 1500, background: '#1e293b', color: '#f1f5f9', showConfirmButton: false });
         fetchStorefrontData();
       } catch (error) {
@@ -150,7 +152,7 @@ const Storefront = ({ isOpen, onClose, userId }) => {
 
   const handleToggleProduct = async (productId) => {
     try {
-      await axios.patch(`${BASE_URL}/api/storefront/agent/${userId}/products/${productId}/toggle`);
+      await axios.patch(`${BASE_URL}/api/storefront/agent/${userId}/products/${productId}/toggle`, {}, { headers: getAuthHeaders() });
       fetchStorefrontData();
     } catch (error) {
       Swal.fire({ icon: 'error', title: 'Error', text: 'Failed to toggle product', background: '#1e293b', color: '#f1f5f9' });

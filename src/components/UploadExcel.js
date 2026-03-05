@@ -43,7 +43,8 @@ const UploadExcel = ({ isOpen, onClose, onUploadSuccess }) => {
 
   const handleDownloadTemplate = () => {
     // Use backend endpoint for template download
-    window.open(`${BASE_URL}/order/download-simplified-template`, '_blank');
+    const token = localStorage.getItem('token');
+    window.open(`${BASE_URL}/order/download-simplified-template?token=${token}`, '_blank');
   };
 
   const handleUpload = async () => {

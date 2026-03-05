@@ -30,6 +30,7 @@ const UserDashboard = () => {
   const [showHistory, setShowHistory] = useState(false);
   const [orderHistory, setOrderHistory] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const submitInProgress = useRef(false);
   const [showTransactions, setShowTransactions] = useState(false);
   const [showUploadExcel, setShowUploadExcel] = useState(false);
   const [showPasteOrders, setShowPasteOrders] = useState(false);
@@ -37,11 +38,12 @@ const UserDashboard = () => {
   const [isSuspended, setIsSuspended] = useState(localStorage.getItem('isSuspended') === 'true');
 
   const userName = localStorage.getItem('name') || 'User';
+  const getAuthHeaders = () => ({ Authorization: `Bearer ${localStorage.getItem('token')}` });
 
   const fetchLoanBalance = useCallback(async () => {
     const userId = localStorage.getItem('userId');
     try {
-      const response = await axios.get(`${BASE_URL}/api/users/loan/${userId}`);
+      const response = await axios.get(`${BASE_URL}/api/users/loan/${userId}`, { headers: getAuthHeaders() });
       setLoanBalance(response.data);
     } catch (err) {
       console.error('Error fetching loan balance:', err);
@@ -50,7 +52,7 @@ const UserDashboard = () => {
 
   const fetchProducts = useCallback(async () => {
     try {
-      const response = await axios.get(`${BASE_URL}/products/agent-products`);
+      const response = await axios.get(`${BASE_URL}/products/agent-products`, { headers: getAuthHeaders() });
       setProducts(response.data || []);
     } catch (error) {
       console.error('Error fetching products:', error);
@@ -60,7 +62,7 @@ const UserDashboard = () => {
   const fetchCart = useCallback(async () => {
     try {
       const userId = localStorage.getItem('userId');
-      const response = await axios.get(`${BASE_URL}/api/cart/${userId}`);
+      const response = await axios.get(`${BASE_URL}/api/cart/${userId}`, { headers: getAuthHeaders() });
       setCart(Array.isArray(response.data.items) ? response.data.items : []);
     } catch (error) {
       console.error('Error fetching cart:', error);
@@ -71,7 +73,7 @@ const UserDashboard = () => {
   const fetchOrderHistory = useCallback(async () => {
     const userId = localStorage.getItem('userId');
     try {
-      const response = await axios.get(`${BASE_URL}/order/admin/${userId}`);
+      const response = await axios.get(`${BASE_URL}/order/admin/${userId}`, { headers: getAuthHeaders() });
       setOrderHistory(response.data || []);
     } catch (error) {
       console.error('Error fetching order history:', error);
@@ -81,13 +83,13 @@ const UserDashboard = () => {
   const fetchData = useCallback(async () => {
     setIsLoading(true);
     try {
-      await Promise.all([fetchProducts(), fetchLoanBalance(), fetchCart()]);
+      await Promise.all([fetchProducts(), fetchLoanBalance(), fetchCart(), fetchOrderHistory()]);
     } catch (error) {
       console.error('Error fetching data:', error);
     } finally {
       setIsLoading(false);
     }
-  }, [fetchProducts, fetchLoanBalance, fetchCart]);
+  }, [fetchProducts, fetchLoanBalance, fetchCart, fetchOrderHistory]);
 
   useEffect(() => {
     const role = localStorage.getItem('role');
@@ -95,7 +97,7 @@ const UserDashboard = () => {
     fetchData();
     const userId = localStorage.getItem('userId');
     if (userId) {
-      axios.get(`${BASE_URL}/api/users/${userId}`).then(res => {
+      axios.get(`${BASE_URL}/api/users/${userId}`, { headers: getAuthHeaders() }).then(res => {
         const suspended = res.data?.isSuspended === true;
         setIsSuspended(suspended);
         localStorage.setItem('isSuspended', suspended ? 'true' : 'false');
@@ -264,7 +266,7 @@ const UserDashboard = () => {
 
     if (result.isConfirmed) {
       try {
-        await axios.delete(`${BASE_URL}/api/cart/remove/${cartItemId}`);
+        await axios.delete(`${BASE_URL}/api/cart/remove/${cartItemId}`, { headers: getAuthHeaders() });
         setCart(prev => prev.filter(item => item.id !== cartItemId));
         Swal.fire({ icon: 'success', title: 'Removed!', timer: 1500, showConfirmButton: false, background: '#1e293b', color: '#f1f5f9' });
       } catch (error) {
@@ -287,7 +289,7 @@ const UserDashboard = () => {
 
     if (result.isConfirmed) {
       try {
-        await axios.delete(`${BASE_URL}/api/cart/${userId}/clear`);
+        await axios.delete(`${BASE_URL}/api/cart/${userId}/clear`, { headers: getAuthHeaders() });
         setCart([]);
         Swal.fire({ icon: 'success', title: 'Cart Cleared!', timer: 1500, showConfirmButton: false, background: '#1e293b', color: '#f1f5f9' });
       } catch (error) {
@@ -303,13 +305,15 @@ const UserDashboard = () => {
   }, 0);
 
   const submitCart = async () => {
-    if (isSubmitting) return;
+    if (isSubmitting || submitInProgress.current) return;
+    submitInProgress.current = true;
 
     const userId = parseInt(localStorage.getItem('userId'), 10);
     const totalAmount = cartTotal;
     const freshBalance = Math.abs(parseFloat(loanBalance?.loanBalance || 0));
 
     if (totalAmount > freshBalance) {
+      submitInProgress.current = false;
       Swal.fire({
         icon: 'warning',
         title: 'Insufficient Funds',
@@ -340,6 +344,7 @@ const UserDashboard = () => {
       fetchLoanBalance();
     }).finally(() => {
       setIsSubmitting(false);
+      submitInProgress.current = false;
     });
   };
 

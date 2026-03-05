@@ -31,7 +31,8 @@ const playNotificationSound = () => {
 };
 
 const AdminDashboard = () => {
-  const navigate = useNavigate();
+  const getAuthHeaders = () => ({ Authorization: `Bearer ${localStorage.getItem('token')}` });
+    const navigate = useNavigate();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('overview');
   const [isLoading, setIsLoading] = useState(true);
@@ -196,7 +197,7 @@ const AdminDashboard = () => {
 
   const fetchUsers = async () => {
     try {
-      const res = await axios.get(`${BASE_URL}/api/users`);
+      const res = await axios.get(`${BASE_URL}/api/users`, { headers: getAuthHeaders() });
       setUsers(res.data || []);
     } catch (error) {
       console.error('Error fetching users:', error);
@@ -324,7 +325,7 @@ const AdminDashboard = () => {
     });
     if (result.isConfirmed) {
       try {
-        await axios.delete(`${BASE_URL}/api/users/${id}`);
+        await axios.delete(`${BASE_URL}/api/users/${id}`, { headers: getAuthHeaders() });
         Swal.fire({ title: 'Deleted!', icon: 'success', timer: 1500, background: '#1e293b', color: '#f1f5f9' });
         fetchUsers();
       } catch (error) {
