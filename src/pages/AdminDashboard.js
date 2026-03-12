@@ -298,7 +298,7 @@ const AdminDashboard = () => {
       await axios.put(`${BASE_URL}/api/users/${selectedUser.id}`, {
         name: selectedUser.name, email: selectedUser.email, password: selectedUser.password,
         role: selectedUser.role || 'USER', phone: selectedUser.phone, isLoggedIn: selectedUser.isLoggedIn
-      });
+      }, { headers: getAuthHeaders() });
       Swal.fire({ icon: 'success', title: 'Updated!', timer: 1500, background: '#1e293b', color: '#f1f5f9' });
       setShowUserModal(false);
       fetchUsers();
@@ -348,7 +348,7 @@ const AdminDashboard = () => {
       return;
     }
     try {
-      await axios.post(`${BASE_URL}/api/users/refund`, { userId: refundUserId, amount });
+      await axios.post(`${BASE_URL}/api/users/refund`, { userId: refundUserId, amount }, { headers: getAuthHeaders() });
       Swal.fire({ icon: 'success', title: 'Refund Added!', timer: 1500, background: '#1e293b', color: '#f1f5f9' });
       setShowRefundModal(false);
       fetchUsers();

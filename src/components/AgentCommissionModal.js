@@ -32,7 +32,8 @@ const AgentCommissionModal = ({ isOpen, onClose }) => {
           params: {
             startDate: dateRange.start || undefined,
             endDate: dateRange.end || undefined
-          }
+          },
+          headers: getAuthHeaders()
         }),
         axios.get(`${BASE_URL}/api/storefront/admin/commissions/weekly`, { headers: getAuthHeaders() })
       ]);
