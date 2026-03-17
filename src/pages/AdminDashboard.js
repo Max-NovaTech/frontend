@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import Swal from 'sweetalert2';
-import { Menu, X, Users, Package, ShoppingCart, Bell, RefreshCw, Loader2, Search, Plus, Edit, Trash2, CheckCircle, XCircle, BarChart3, Wallet, User, LogOut, RotateCcw, Eye, EyeOff, Save, Banknote, DollarSign, Table2, Key } from 'lucide-react';
+import { Menu, X, Users, Package, ShoppingCart, Bell, RefreshCw, Loader2, Search, Plus, Edit, Trash2, CheckCircle, XCircle, BarChart3, Wallet, User, LogOut, RotateCcw, Eye, EyeOff, Save, Banknote, DollarSign, Table2, Key, AlertTriangle, Wifi } from 'lucide-react';
 import BASE_URL from '../endpoints/endpoints';
 import { io as socketIO } from 'socket.io-client';
 import ProductDialog from '../components/ProductDialog';
@@ -16,6 +16,8 @@ import PaymentMessagesModal from '../components/PaymentMessagesModal';
 import BeneficiaryTableModal from '../components/BeneficiaryTableModal';
 import FloatingChatButton from '../components/FloatingChatButton';
 import ExternalApiKeys from '../components/ExternalApiKeys';
+import OrderTracker from '../components/OrderTracker';
+import SuspiciousActivity from '../components/SuspiciousActivity';
 
 // Notification sound
 const notificationSound = new Audio('/notification-sound.mp3');
@@ -86,6 +88,10 @@ const AdminDashboard = () => {
   const [showPaymentMessagesModal, setShowPaymentMessagesModal] = useState(false);
   const [showBeneficiaryModal, setShowBeneficiaryModal] = useState(false);
   const [showExternalApiModal, setShowExternalApiModal] = useState(false);
+  const [showOrderTracker, setShowOrderTracker] = useState(false);
+  const [showSuspiciousActivity, setShowSuspiciousActivity] = useState(false);
+  const [fraudAlerts, setFraudAlerts] = useState([]);
+  const [fraudBlinking, setFraudBlinking] = useState(false);
   
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -204,12 +210,33 @@ const AdminDashboard = () => {
     }
   };
 
+  const fetchFraudAlerts = useCallback(async () => {
+    try {
+      const res = await axios.get(`${BASE_URL}/order/admin/order-tracker`, { headers: getAuthHeaders() });
+      if (res.data.success) {
+        const allAlerts = res.data.fraudAlerts || [];
+        const resolvedList = JSON.parse(localStorage.getItem('resolvedFraudAlerts') || '[]');
+        const activeAlerts = allAlerts.filter(a => !resolvedList.includes(`${a.orderId}-${a.itemId}`));
+        setFraudAlerts(activeAlerts);
+        if (activeAlerts.length > 0) {
+          setFraudBlinking(true);
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching fraud alerts:', error);
+    }
+  }, []);
+
   useEffect(() => {
     fetchData(true); // Initial load with loading indicator
-    // Background refresh without visible loading - every 10 seconds
-    const interval = setInterval(() => fetchData(false), 30000);
+    fetchFraudAlerts(); // Fetch fraud alerts immediately on mount
+    // Background refresh without visible loading - every 30 seconds
+    const interval = setInterval(() => {
+      fetchData(false);
+      fetchFraudAlerts();
+    }, 30000);
     return () => clearInterval(interval);
-  }, [fetchData]);
+  }, [fetchData, fetchFraudAlerts]);
 
   // Real-time order notifications via socket
   useEffect(() => {
@@ -217,9 +244,10 @@ const AdminDashboard = () => {
     socket.on('new-order', () => {
       // Immediately refresh data when a new order is placed
       fetchData(false);
+      fetchFraudAlerts();
     });
     return () => socket.disconnect();
-  }, [fetchData]);
+  }, [fetchData, fetchFraudAlerts]);
 
   useEffect(() => {
     const role = localStorage.getItem('role');
@@ -529,6 +557,10 @@ const AdminDashboard = () => {
             className="w-full flex items-center gap-3 px-4 py-3 text-dark-300 hover:text-white hover:bg-dark-700/50 rounded-xl transition-all">
             <Key className="w-5 h-5" /><span>External API Keys</span>
           </button>
+          <button onClick={() => { setShowOrderTracker(true); setIsSidebarOpen(false); }}
+            className="w-full flex items-center gap-3 px-4 py-3 text-dark-300 hover:text-white hover:bg-dark-700/50 rounded-xl transition-all">
+            <Wifi className="w-5 h-5" /><span>Order Tracker</span>
+          </button>
           <hr className="border-dark-700 my-2" />
           <button onClick={() => navigate('/profile')}
             className="w-full flex items-center gap-3 px-4 py-3 text-dark-300 hover:text-white hover:bg-dark-700/50 rounded-xl transition-all">
@@ -561,6 +593,18 @@ const AdminDashboard = () => {
                 </div>
               </div>
               <div className="flex items-center gap-2 sm:gap-3">
+                {fraudAlerts.length > 0 && (
+                  <button
+                    onClick={() => { setShowSuspiciousActivity(true); setFraudBlinking(false); }}
+                    className={`relative flex items-center gap-1.5 px-3 py-2 bg-red-500/20 border-2 border-red-500 rounded-xl text-red-400 font-bold text-xs sm:text-sm ${fraudBlinking ? 'animate-pulse' : ''}`}
+                    style={fraudBlinking ? { animation: 'pulse 0.5s ease-in-out infinite, borderBlink 0.3s ease-in-out infinite alternate' } : {}}
+                    title="Suspicious activity detected!"
+                  >
+                    <AlertTriangle className="w-4 h-4 sm:w-5 sm:h-5 animate-bounce" />
+                    <span className="hidden sm:inline">ALERT</span>
+                    <span className="bg-red-500 text-white text-[10px] font-bold rounded-full min-w-4 h-4 px-1 flex items-center justify-center">{fraudAlerts.length}</span>
+                  </button>
+                )}
                 <button onClick={() => setShowBeneficiaryModal(true)} className="p-2 bg-dark-800 rounded-xl hover:bg-dark-700" title="Beneficiary Records">
                   <Table2 className="w-4 h-4 sm:w-5 sm:h-5 text-amber-400" />
                 </button>
@@ -1117,6 +1161,11 @@ const AdminDashboard = () => {
 
       {/* External API Keys Modal */}
       <ExternalApiKeys isOpen={showExternalApiModal} onClose={() => setShowExternalApiModal(false)} />
+      {/* Order Tracker Modal */}
+      <OrderTracker isOpen={showOrderTracker} onClose={() => setShowOrderTracker(false)} onFraudDetected={(alerts) => { setFraudAlerts(alerts); setFraudBlinking(true); }} />
+
+      {/* Suspicious Activity Modal */}
+      <SuspiciousActivity isOpen={showSuspiciousActivity} onClose={() => setShowSuspiciousActivity(false)} onAlertsUpdate={(activeAlerts) => { setFraudAlerts(activeAlerts); if (activeAlerts.length > 0) setFraudBlinking(true); }} />
 
       {/* Floating Chat */}
       <FloatingChatButton currentUser={{ id: parseInt(localStorage.getItem('userId')), name: localStorage.getItem('name'), role: 'admin' }} />

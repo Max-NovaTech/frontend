@@ -46,9 +46,14 @@ const TopUp = ({ isOpen, onClose, onSuccess }) => {
 
     try {
       const userId = localStorage.getItem('userId');
+      const token = localStorage.getItem('token');
       const response = await axios.post(`${BASE_URL}/api/topup/initialize`, {
         userId: parseInt(userId, 10),
         amount: topupAmount
+      }, {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
       });
 
       if (response.data.success) {
@@ -87,8 +92,13 @@ const TopUp = ({ isOpen, onClose, onSuccess }) => {
     setLoading(true);
 
     try {
+      const token = localStorage.getItem('token');
       const response = await axios.post(`${BASE_URL}/api/topup/verify`, {
         reference: externalRef
+      }, {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
       });
 
       if (response.data.success) {
