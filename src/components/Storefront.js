@@ -92,7 +92,7 @@ const Storefront = ({ isOpen, onClose, userId }) => {
       await axios.post(`${BASE_URL}/api/storefront/agent/${userId}/products`, {
         productId: selectedProduct.id,
         customPrice: parseFloat(customPrice)
-      });
+      }, { headers: getAuthHeaders() });
       
       Swal.fire({ icon: 'success', title: 'Added!', text: 'Product added to your storefront', timer: 1500, background: '#1e293b', color: '#f1f5f9', showConfirmButton: false });
       setShowAddModal(false);
@@ -117,7 +117,7 @@ const Storefront = ({ isOpen, onClose, userId }) => {
     try {
       await axios.put(`${BASE_URL}/api/storefront/agent/${userId}/products/${editingProduct.id}`, {
         customPrice: parseFloat(editPrice)
-      });
+      }, { headers: getAuthHeaders() });
       
       Swal.fire({ icon: 'success', title: 'Updated!', timer: 1500, background: '#1e293b', color: '#f1f5f9', showConfirmButton: false });
       setEditingProduct(null);
