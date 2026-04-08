@@ -339,9 +339,9 @@ const AdminDashboard = () => {
   const handleToggleSuspend = async (user) => {
     const newStatus = !user.isSuspended;
     try {
-      await axios.put(`${BASE_URL}/api/users/${user.id}/suspend`, { isSuspended: newStatus });
+      await axios.put(`${BASE_URL}/api/users/${user.id}/suspend`, { isSuspended: newStatus }, { headers: getAuthHeaders() });
+      setUsers(prev => prev.map(u => u.id === user.id ? { ...u, isSuspended: newStatus } : u));
       Swal.fire({ icon: 'success', title: newStatus ? 'Suspended!' : 'Unsuspended!', text: newStatus ? `${user.name} has been suspended.` : `${user.name} has been unsuspended.`, timer: 1500, showConfirmButton: false, background: '#1e293b', color: '#f1f5f9' });
-      fetchUsers();
     } catch (error) {
       Swal.fire({ icon: 'error', title: 'Failed!', text: 'Could not update suspension status.', background: '#1e293b', color: '#f1f5f9' });
     }
