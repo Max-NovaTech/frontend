@@ -34,10 +34,11 @@ const Storefront = ({ isOpen, onClose, userId }) => {
     if (!userId) return;
     setLoading(true);
     try {
+      const headers = getAuthHeaders();
       const [slugRes, productsRes, availableRes] = await Promise.all([
-        axios.get(`${BASE_URL}/api/storefront/agent/${userId}/slug`, { headers: getAuthHeaders() }),
-        axios.get(`${BASE_URL}/api/storefront/agent/${userId}/products`, { headers: getAuthHeaders() }),
-        axios.get(`${BASE_URL}/api/storefront/agent/${userId}/products/available`, { headers: getAuthHeaders() })
+        axios.get(`${BASE_URL}/api/storefront/agent/${userId}/slug`, { headers }),
+        axios.get(`${BASE_URL}/api/storefront/agent/${userId}/products`, { headers }),
+        axios.get(`${BASE_URL}/api/storefront/agent/${userId}/products/available`, { headers })
       ]);
 
       if (slugRes.data.success) setStorefrontSlug(slugRes.data.slug);
