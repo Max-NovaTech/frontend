@@ -1,9 +1,33 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { MessageSquareWarning, X, CheckCircle, Clock, AlertCircle, Phone, Loader2, RefreshCw, Trash2, MessageCircle } from 'lucide-react';
+import React, { useState, useEffect, useRef, memo } from 'react';
+import { MessageSquareWarning, X, CheckCircle, Clock, AlertCircle, Phone, Loader2, RefreshCw, Trash2, MessageCircle, Copy } from 'lucide-react';
 import axios from 'axios';
 import Swal from 'sweetalert2';
 import BASE_URL from '../endpoints/endpoints';
 import socketIO from 'socket.io-client';
+
+// Isolated update-status dialog. Owns its own `notes` input state so typing here
+// does NOT re-render the parent ComplaintsViewer (and its long list of complaints).
+// Without this isolation, every keystroke was reconciling 50+ complaint rows.
+const UpdateStatusDialog = memo(({ complaint, initialNotes, onClose, onUpdate }) => {
+  const [notes, setNotes] = useState(initialNotes || '');
+  if (!complaint) return null;
+  return (
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
+      <div className="bg-dark-800 border border-dark-700 rounded-2xl p-6 w-full max-w-md">
+        <h3 className="text-lg font-bold text-white mb-4">Update Complaint Status</h3>
+        <textarea className="w-full bg-dark-900 border border-dark-600 rounded-xl px-4 py-3 text-white placeholder-dark-500 resize-none mb-4"
+          placeholder="Admin notes (optional)" rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} />
+        <div className="flex gap-3 mb-3">
+          <button onClick={() => onUpdate(complaint.id, 'reviewed', notes)}
+            className="flex-1 px-4 py-2 bg-cyan-500 text-white rounded-lg font-medium hover:bg-cyan-600">Mark Reviewed</button>
+          <button onClick={() => onUpdate(complaint.id, 'resolved', notes)}
+            className="flex-1 px-4 py-2 bg-emerald-500 text-white rounded-lg font-medium hover:bg-emerald-600">Mark Resolved</button>
+        </div>
+        <button onClick={onClose} className="w-full px-4 py-2 bg-dark-700 text-dark-300 rounded-lg hover:bg-dark-600">Cancel</button>
+      </div>
+    </div>
+  );
+});
 
 const ComplaintsViewer = ({ isOpen, onClose }) => {
   const [complaints, setComplaints] = useState([]);
@@ -11,7 +35,6 @@ const ComplaintsViewer = ({ isOpen, onClose }) => {
   const [pendingCount, setPendingCount] = useState(0);
   const [selectedComplaint, setSelectedComplaint] = useState(null);
   const [statusFilter, setStatusFilter] = useState('all');
-  const [adminNotes, setAdminNotes] = useState('');
   const statusFilterRef = useRef(statusFilter);
   const socketRef = useRef(null);
 
@@ -98,7 +121,7 @@ const ComplaintsViewer = ({ isOpen, onClose }) => {
     };
   }, [isOpen]);
 
-  const handleUpdateStatus = async (id, newStatus) => {
+  const handleUpdateStatus = async (id, newStatus, adminNotes = '') => {
     try {
       const token = localStorage.getItem('token');
       await axios.put(`${BASE_URL}/api/complaints/${id}`, { status: newStatus, adminNotes }, {
@@ -106,7 +129,6 @@ const ComplaintsViewer = ({ isOpen, onClose }) => {
       });
       Swal.fire({ icon: 'success', title: 'Status Updated', timer: 1500, background: '#1e293b', color: '#f1f5f9' });
       setSelectedComplaint(null);
-      setAdminNotes('');
       fetchComplaints();
       fetchPendingCount();
     } catch (err) {
@@ -193,9 +215,9 @@ const ComplaintsViewer = ({ isOpen, onClose }) => {
               ))}
             </div>
 
-            <div className="p-4 overflow-y-auto flex-1">
+            <div className="p-4 overflow-y-auto flex-1 min-h-[60vh]">
               {loading ? (
-                <div className="flex items-center justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-red-500" /></div>
+                <div className="flex items-center justify-center h-full"><Loader2 className="w-8 h-8 animate-spin text-red-500" /></div>
               ) : complaints.length === 0 ? (
                 <div className="text-center py-12">
                   <MessageSquareWarning className="w-12 h-12 text-dark-600 mx-auto mb-4" />
@@ -211,19 +233,33 @@ const ComplaintsViewer = ({ isOpen, onClose }) => {
                             <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium border ${getStatusStyle(complaint.status)}`}>
                               {getStatusIcon(complaint.status)} {complaint.status}
                             </span>
-                            {complaint.complaintDate && (
-                              <span className="text-xs text-dark-500">Date of Issue: {new Date(complaint.complaintDate).toLocaleDateString()}</span>
-                            )}
-                            {complaint.complaintTime && (
-                              <span className="text-xs text-dark-500">Time of Issue: {complaint.complaintTime}</span>
-                            )}
-                            {!complaint.complaintDate && !complaint.complaintTime && (
-                              <span className="text-xs text-dark-500">{new Date(complaint.createdAt).toLocaleString()}</span>
+                            <span className="text-xs text-dark-500">
+                              Submitted: {new Date(complaint.createdAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}, {new Date(complaint.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'numeric', year: 'numeric' })}
+                            </span>
+                            {(complaint.complaintTime || complaint.complaintDate) && (
+                              <span className="text-xs text-amber-400">
+                                Issue Time: {complaint.complaintTime || '--:--'}{complaint.complaintDate ? `, ${new Date(complaint.complaintDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'numeric', year: 'numeric' })}` : ''}
+                              </span>
                             )}
                           </div>
                           <div className="flex flex-wrap items-center gap-3 mb-2 text-sm">
                             <span className="text-cyan-400 font-medium">ID: #{complaint.id}</span>
-                            <span className="flex items-center gap-1 text-dark-400"><Phone className="w-4 h-4" /> {complaint.mobileNumber}</span>
+                            <span className="flex items-center gap-1 text-dark-400">
+                              <Phone className="w-4 h-4" /> {complaint.mobileNumber}
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  navigator.clipboard.writeText(complaint.mobileNumber);
+                                  const btn = e.currentTarget;
+                                  btn.classList.add('text-emerald-400');
+                                  setTimeout(() => btn.classList.remove('text-emerald-400'), 1500);
+                                }}
+                                title="Copy number"
+                                className="p-1 hover:bg-dark-700 rounded transition-colors"
+                              >
+                                <Copy className="w-3.5 h-3.5" />
+                              </button>
+                            </span>
                             {complaint.orderId && <span className="text-dark-500">Order: #{complaint.orderId}</span>}
                           </div>
                           <p className="text-dark-200">{complaint.message}</p>
@@ -239,7 +275,7 @@ const ComplaintsViewer = ({ isOpen, onClose }) => {
                             <MessageCircle className="w-4 h-4" />
                           </button>
                           {complaint.status !== 'resolved' && (
-                            <button onClick={() => { setSelectedComplaint(complaint); setAdminNotes(complaint.adminNotes || ''); }}
+                            <button onClick={() => setSelectedComplaint(complaint)}
                               className="px-3 py-2 bg-cyan-500 text-white text-sm rounded-lg hover:bg-cyan-600">Update</button>
                           )}
                           <button onClick={() => handleDelete(complaint.id)} className="p-2 text-red-400 hover:bg-red-500/20 rounded-lg">
@@ -255,22 +291,12 @@ const ComplaintsViewer = ({ isOpen, onClose }) => {
           </div>
         </div>
 
-      {selectedComplaint && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
-          <div className="bg-dark-800 border border-dark-700 rounded-2xl p-6 w-full max-w-md">
-            <h3 className="text-lg font-bold text-white mb-4">Update Complaint Status</h3>
-            <textarea className="w-full bg-dark-900 border border-dark-600 rounded-xl px-4 py-3 text-white placeholder-dark-500 resize-none mb-4"
-              placeholder="Admin notes (optional)" rows={3} value={adminNotes} onChange={(e) => setAdminNotes(e.target.value)} />
-            <div className="flex gap-3 mb-3">
-              <button onClick={() => handleUpdateStatus(selectedComplaint.id, 'reviewed')}
-                className="flex-1 px-4 py-2 bg-cyan-500 text-white rounded-lg font-medium hover:bg-cyan-600">Mark Reviewed</button>
-              <button onClick={() => handleUpdateStatus(selectedComplaint.id, 'resolved')}
-                className="flex-1 px-4 py-2 bg-emerald-500 text-white rounded-lg font-medium hover:bg-emerald-600">Mark Resolved</button>
-            </div>
-            <button onClick={() => setSelectedComplaint(null)} className="w-full px-4 py-2 bg-dark-700 text-dark-300 rounded-lg hover:bg-dark-600">Cancel</button>
-          </div>
-        </div>
-      )}
+      <UpdateStatusDialog
+        complaint={selectedComplaint}
+        initialNotes={selectedComplaint?.adminNotes || ''}
+        onClose={() => setSelectedComplaint(null)}
+        onUpdate={handleUpdateStatus}
+      />
     </>
   );
 };

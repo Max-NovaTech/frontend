@@ -27,7 +27,7 @@ const getAuthHeaders = () => ({ Authorization: `Bearer ${localStorage.getItem('t
 const TransactionalAdminModal = ({ isOpen, onClose }) => {
   const [transactions, setTransactions] = useState([]);
   const [shopOrders, setShopOrders] = useState([]);
-  const [allOrders, setAllOrders] = useState([]);
+  const [shopServerStats, setShopServerStats] = useState({ totalOrders: 0, totalAmount: 0, totalGB: 0 });
   const [loading, setLoading] = useState(false);
   const [shopLoading, setShopLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('transactions');
@@ -42,6 +42,19 @@ const TransactionalAdminModal = ({ isOpen, onClose }) => {
   const [shopPage, setShopPage] = useState(1);
   const [pagination, setPagination] = useState({ total: 0, totalPages: 1 });
   const [serverStats, setServerStats] = useState({ totalTransactions: 0, totalCredits: 0, totalDebits: 0, netBalance: 0 });
+  // DB-aggregated overview (revenue/expenses/GB/sales-by-agent/shop totals)
+  // Replaces the previous 200-row client-side reduce that produced wrong
+  // figures whenever there were more than ~200 orders in the selected range.
+  const [serverOverview, setServerOverview] = useState({
+    revenue: 0,
+    revenueCount: 0,
+    expenses: 0,
+    expenseCount: 0,
+    totalGB: 0,
+    shop: { total: 0, totalAmount: 0, totalGB: 0 },
+    salesByAgent: []
+  });
+  const [overviewLoading, setOverviewLoading] = useState(false);
   // Separate filters for shop orders
   const [shopFilters, setShopFilters] = useState({ name: '', phone: '', product: '', status: '', startDate: '', endDate: '' });
   // Referrals state
@@ -71,6 +84,7 @@ const TransactionalAdminModal = ({ isOpen, onClose }) => {
       params.append('limit', itemsPerPage);
       if (debouncedSearch) params.append('search', debouncedSearch);
       if (typeFilter) params.append('type', typeFilter);
+      if (networkFilter) params.append('network', networkFilter);
       if (amountFilter === 'credits') params.append('amountFilter', 'positive');
       else if (amountFilter === 'debits') params.append('amountFilter', 'negative');
       if (startDate) params.append('startDate', startDate);
@@ -95,22 +109,33 @@ const TransactionalAdminModal = ({ isOpen, onClose }) => {
     } finally {
       setLoading(false);
     }
-  }, [currentPage, debouncedSearch, typeFilter, amountFilter, startDate, endDate]);
+  }, [currentPage, debouncedSearch, typeFilter, networkFilter, amountFilter, startDate, endDate]);
 
   const fetchShopOrders = useCallback(async () => {
     setShopLoading(true);
     try {
-      const res = await axios.get(`${BASE_URL}/api/shop/orders`, { headers: getAuthHeaders() });
+      const params = new URLSearchParams();
+      // Honour either the main date filter or the shop-tab-specific dates so
+      // the server aggregates over the same window the user is viewing.
+      const s = shopFilters.startDate || startDate;
+      const e = shopFilters.endDate || endDate;
+      if (s) params.append('startDate', s);
+      if (e) params.append('endDate', e);
+      const qs = params.toString();
+      const url = `${BASE_URL}/api/shop/orders${qs ? `?${qs}` : ''}`;
+      const res = await axios.get(url, { headers: getAuthHeaders() });
       if (res.data.success) {
         setShopOrders(res.data.orders || []);
+        setShopServerStats(res.data.stats || { totalOrders: 0, totalAmount: 0, totalGB: 0 });
       }
     } catch (error) {
       console.error('Error fetching shop orders:', error);
       setShopOrders([]);
+      setShopServerStats({ totalOrders: 0, totalAmount: 0, totalGB: 0 });
     } finally {
       setShopLoading(false);
     }
-  }, []);
+  }, [shopFilters.startDate, shopFilters.endDate, startDate, endDate]);
 
   const fetchReferralOrders = useCallback(async () => {
     setReferralLoading(true);
@@ -136,23 +161,45 @@ const TransactionalAdminModal = ({ isOpen, onClose }) => {
     }
   }, [referralFilters]);
 
-  // Fetch orders only once when modal opens (lightweight - no limit=999999)
-  const fetchOrders = useCallback(async () => {
+  // DB-aggregated overview (revenue/expenses/GB/sales-by-agent/shop totals).
+  // Re-fetched whenever the main date range changes so every tab stays in
+  // sync with the selected window.
+  const fetchOverview = useCallback(async () => {
+    setOverviewLoading(true);
     try {
-      const res = await axios.get(`${BASE_URL}/order/admin/allorder?limit=200`, { headers: getAuthHeaders() });
-      const ordersData = res.data?.data || res.data?.orders || [];
-      setAllOrders(ordersData);
+      const params = new URLSearchParams();
+      if (startDate) params.append('startDate', startDate);
+      if (endDate) params.append('endDate', endDate);
+      if (debouncedSearch) params.append('search', debouncedSearch);
+      if (networkFilter) params.append('network', networkFilter);
+      const qs = params.toString();
+      const url = `${BASE_URL}/api/admin-overview${qs ? `?${qs}` : ''}`;
+      const res = await axios.get(url, { headers: getAuthHeaders() });
+      if (res.data?.success) {
+        const d = res.data.data || {};
+        setServerOverview({
+          revenue: d.revenue || 0,
+          revenueCount: d.revenueCount || 0,
+          expenses: d.expenses || 0,
+          expenseCount: d.expenseCount || 0,
+          totalGB: d.totalGB || 0,
+          shop: d.shop || { total: 0, totalAmount: 0, totalGB: 0 },
+          salesByAgent: Array.isArray(d.salesByAgent) ? d.salesByAgent : []
+        });
+      }
     } catch (error) {
-      console.error('Error fetching orders:', error);
+      console.error('Error fetching admin overview:', error);
+    } finally {
+      setOverviewLoading(false);
     }
-  }, []);
+  }, [startDate, endDate, debouncedSearch, networkFilter]);
 
   useEffect(() => {
     if (isOpen) {
       fetchTransactions();
-      fetchOrders();
+      fetchOverview();
     }
-  }, [isOpen, fetchTransactions, fetchOrders]);
+  }, [isOpen, fetchTransactions, fetchOverview]);
 
   useEffect(() => {
     if (isOpen && activeTab === 'shop') fetchShopOrders();
@@ -162,111 +209,43 @@ const TransactionalAdminModal = ({ isOpen, onClose }) => {
     if (isOpen && activeTab === 'referrals') fetchReferralOrders();
   }, [isOpen, activeTab, fetchReferralOrders]);
 
-  // Server handles filtering now - only apply network filter client-side (not supported server-side)
-  const filteredTransactions = useMemo(() => {
-    if (!networkFilter) return transactions;
-    return transactions.filter(tx => {
-      const desc = (tx.description || '').toUpperCase();
-      if (networkFilter === 'MTN') return desc.includes('MTN');
-      if (networkFilter === 'AIRTELTIGO') return desc.includes('AIRTEL') || desc.includes('TIGO');
-      if (networkFilter === 'TELECEL') return desc.includes('TELECEL') || desc.includes('VODAFONE');
-      return true;
-    });
-  }, [transactions, networkFilter]);
+  // All filtering (search, type, amount, network, date) is now done
+  // server-side so the list and the stat cards stay perfectly in sync.
+  const filteredTransactions = transactions;
 
-  // Filter orders with same filters as transactions (search, network, date)
-  const filteredOrders = useMemo(() => {
-    let filtered = allOrders;
-    
-    if (search) {
-      const searchLower = search.toLowerCase();
-      filtered = filtered.filter(order => {
-        const productName = (order.product?.name || '').toLowerCase();
-        const productDesc = (order.product?.description || '').toLowerCase();
-        const userName = (order.user?.name || '').toLowerCase();
-        const phoneNumber = (order.phoneNumber || '').toLowerCase();
-        return productName.includes(searchLower) || productDesc.includes(searchLower) || userName.includes(searchLower) || phoneNumber.includes(searchLower);
-      });
-    }
-    
-    if (networkFilter) {
-      filtered = filtered.filter(order => {
-        const productName = (order.product?.name || '').toUpperCase();
-        if (networkFilter === 'MTN') return productName.includes('MTN');
-        if (networkFilter === 'AIRTELTIGO') return productName.includes('AIRTEL') || productName.includes('TIGO');
-        if (networkFilter === 'TELECEL') return productName.includes('TELECEL') || productName.includes('VODAFONE');
-        return true;
-      });
-    }
-    
-    if (startDate) {
-      const start = new Date(startDate + 'T00:00:00');
-      filtered = filtered.filter(order => {
-        const d = new Date(order.order?.createdAt || order.createdAt);
-        return d >= start;
-      });
-    }
-    if (endDate) {
-      const end = new Date(endDate + 'T23:59:59.999');
-      filtered = filtered.filter(order => {
-        const d = new Date(order.order?.createdAt || order.createdAt);
-        return d <= end;
-      });
-    }
-    
-    return filtered;
-  }, [allOrders, search, networkFilter, startDate, endDate]);
-
-  // Stats now come from the server-side stats endpoint (fast DB aggregation)
+  // Stats combine transaction totals (from /transactions/stats) with
+  // DB-aggregated order totals (from /admin-overview) so we always show
+  // the correct revenue/expenses/GB regardless of dataset size.
   const stats = useMemo(() => {
     const total = serverStats.totalTransactions || pagination.total || 0;
     const credits = serverStats.totalCredits || 0;
     const debits = serverStats.totalDebits || 0;
     const txNet = credits + debits;
 
-    // Revenue/expenses/GB still computed from the limited orders set
-    let revenue = 0, revenueOrderCount = 0, totalGB = 0, expenses = 0, expenseCount = 0;
-    filteredOrders.forEach(order => {
-      const status = (order.order?.items?.[0]?.status || order.status || '').toLowerCase();
-      const price = order.product?.price || 0;
-      const quantity = order.quantity || order.order?.items?.[0]?.quantity || 1;
-      if (status !== 'cancelled' && status !== 'canceled') {
-        revenue += quantity * price;
-        revenueOrderCount++;
-      }
-      if (status === 'completed') {
-        const userEmail = (order.user?.email || '').toLowerCase();
-        const userName = (order.user?.name || '').toLowerCase();
-        const isShopOrder = userEmail.includes('shop@') || userName === 'shop';
-        if (!isShopOrder) {
-          const description = order.product?.description || '';
-          const match = description.match(/(\d+(?:\.\d+)?)\s*GB/i);
-          if (match) totalGB += parseFloat(match[1]);
-        }
-      }
-      if (status === 'cancelled' || status === 'canceled') {
-        expenses += quantity * price;
-        expenseCount++;
-      }
-    });
+    const revenue = serverOverview.revenue || 0;
+    const revenueOrderCount = serverOverview.revenueCount || 0;
+    const expenses = serverOverview.expenses || 0;
+    const expenseCount = serverOverview.expenseCount || 0;
+    const totalGB = serverOverview.totalGB || 0;
     const net = revenue - expenses;
     return { total, credits, debits, txNet, revenue, revenueOrderCount, expenses, expenseCount, net, totalGB };
-  }, [serverStats, pagination, filteredOrders]);
+  }, [serverStats, pagination, serverOverview]);
 
+  // Per-agent sales come from the DB aggregate so every agent who had an
+  // order in the selected window is represented, not just those whose
+  // transactions happen to be on the current paginated page.
   const userSales = useMemo(() => {
-    const salesMap = new Map();
-    // Exclude cancelled orders from sales
-    filteredTransactions
-      .filter(tx => tx.type === 'ORDER' && !tx.description?.toLowerCase().includes('cancelled') && !tx.description?.toLowerCase().includes('refund'))
-      .forEach(tx => {
-        const name = tx.user?.name || 'Unknown';
-        const existing = salesMap.get(name) || { name, orders: 0, total: 0 };
-        existing.orders += 1;
-        existing.total += Math.abs(tx.amount);
-        salesMap.set(name, existing);
-      });
-    return Array.from(salesMap.values()).sort((a, b) => b.total - a.total);
-  }, [filteredTransactions]);
+    const agentSearch = (search || '').toLowerCase();
+    const source = serverOverview.salesByAgent || [];
+    const mapped = source.map(a => ({
+      name: a.name || 'Unknown',
+      role: a.role || '',
+      orders: a.orders || 0,
+      total: a.total || 0
+    }));
+    if (!agentSearch) return mapped;
+    return mapped.filter(u => (u.name || '').toLowerCase().includes(agentSearch));
+  }, [serverOverview.salesByAgent, search]);
 
   const exportToExcel = () => {
     const data = filteredTransactions.map(tx => ({
@@ -305,7 +284,22 @@ const TransactionalAdminModal = ({ isOpen, onClose }) => {
     return filtered;
   }, [shopOrders, shopFilters]);
 
+  // When no client-side filter is applied (name/phone/product/status), use
+  // the server-aggregated stats so totals reflect every order in the selected
+  // date window regardless of pagination. Otherwise fall back to the client
+  // reduction over the currently visible rows.
+  const hasClientShopFilter = Boolean(
+    shopFilters.name || shopFilters.phone || shopFilters.product || shopFilters.status
+  );
+
   const shopStats = useMemo(() => {
+    if (!hasClientShopFilter) {
+      return {
+        total: shopServerStats.totalOrders || 0,
+        totalAmount: shopServerStats.totalAmount || 0,
+        totalGB: shopServerStats.totalGB || 0
+      };
+    }
     const completed = filteredShopOrders.filter(o => o.status?.toLowerCase() === 'completed');
     const totalAmount = filteredShopOrders.reduce((sum, o) => sum + (o.amount || 0), 0);
     let totalGB = 0;
@@ -315,7 +309,7 @@ const TransactionalAdminModal = ({ isOpen, onClose }) => {
       if (match) totalGB += parseFloat(match[1]);
     });
     return { total: filteredShopOrders.length, totalAmount, totalGB };
-  }, [filteredShopOrders]);
+  }, [filteredShopOrders, hasClientShopFilter, shopServerStats.totalOrders, shopServerStats.totalAmount, shopServerStats.totalGB]);
 
   const tabs = [
     { id: 'transactions', name: 'Transactions' },
@@ -354,7 +348,7 @@ const TransactionalAdminModal = ({ isOpen, onClose }) => {
   // Handle marking commissions as paid
   const handleMarkCommissionPaid = async (agentId, orderIds) => {
     try {
-      await axios.post(`${BASE_URL}/api/storefront/admin/commissions/pay`, { agentId, orderIds });
+      await axios.post(`${BASE_URL}/api/storefront/admin/commissions/pay`, { agentId, orderIds }, { headers: getAuthHeaders() });
       Swal.fire({ icon: 'success', title: 'Success', text: 'Commissions marked as paid', timer: 1500, background: '#1e293b', color: '#f1f5f9', showConfirmButton: false });
       fetchReferralOrders();
     } catch (error) {
@@ -507,27 +501,105 @@ const TransactionalAdminModal = ({ isOpen, onClose }) => {
                   )}
                 </div>
               ) : activeTab === 'sales' ? (
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead className="bg-dark-900">
-                      <tr className="text-left text-dark-400 text-sm">
-                        <th className="px-4 py-3">User</th>
-                        <th className="px-4 py-3">Orders</th>
-                        <th className="px-4 py-3">Total Sales</th>
-                        <th className="px-4 py-3">Avg Order</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {userSales.map((user, i) => (
-                        <tr key={i} className="border-t border-dark-700 hover:bg-dark-800/50">
-                          <td className="px-4 py-3 text-white font-medium">{user.name}</td>
-                          <td className="px-4 py-3 text-dark-300">{user.orders}</td>
-                          <td className="px-4 py-3 text-cyan-400 font-semibold">{formatAmount(user.total)}</td>
-                          <td className="px-4 py-3 text-dark-300">{formatAmount(user.total / user.orders)}</td>
+                <div>
+                  {/* Quick filters: Today / Yesterday / All Time.
+                      All Time = no date filter → every agent & every sale in
+                      the system. Today/Yesterday set the main date range so
+                      the server re-aggregates just that single day and
+                      returns every agent who sold in it. */}
+                  {(() => {
+                    const pad = (n) => String(n).padStart(2, '0');
+                    const fmt = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+                    const now = new Date();
+                    const todayStr = fmt(now);
+                    const yest = new Date(now); yest.setDate(now.getDate() - 1);
+                    const yestStr = fmt(yest);
+                    const isToday = startDate === todayStr && endDate === todayStr;
+                    const isYesterday = startDate === yestStr && endDate === yestStr;
+                    const isAllTime = !startDate && !endDate;
+                    const baseBtn = 'px-4 py-2 rounded-lg text-sm font-medium transition-colors';
+                    const active = 'bg-indigo-500 text-white';
+                    const inactive = 'bg-dark-800 hover:bg-dark-700 text-dark-200 border border-dark-700';
+                    return (
+                      <div className="flex flex-wrap items-center gap-2 mb-4">
+                        <span className="text-dark-400 text-sm mr-2">Quick filter:</span>
+                        <button
+                          type="button"
+                          onClick={() => { setStartDate(todayStr); setEndDate(todayStr); }}
+                          className={`${baseBtn} ${isToday ? active : inactive}`}
+                        >Today</button>
+                        <button
+                          type="button"
+                          onClick={() => { setStartDate(yestStr); setEndDate(yestStr); }}
+                          className={`${baseBtn} ${isYesterday ? active : inactive}`}
+                        >Yesterday</button>
+                        <button
+                          type="button"
+                          onClick={() => { setStartDate(''); setEndDate(''); }}
+                          className={`${baseBtn} ${isAllTime ? active : inactive}`}
+                        >All Time</button>
+                        {overviewLoading && (
+                          <span className="flex items-center gap-2 text-dark-400 text-sm ml-2">
+                            <Loader2 className="w-4 h-4 animate-spin" /> Loading…
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })()}
+
+                  {/* Grand-total strip so admins can instantly see the
+                      combined sales across every agent in the current window. */}
+                  {userSales.length > 0 && (() => {
+                    const grandOrders = userSales.reduce((s, u) => s + (u.orders || 0), 0);
+                    const grandTotal = userSales.reduce((s, u) => s + (u.total || 0), 0);
+                    const grandAvg = grandOrders ? grandTotal / grandOrders : 0;
+                    return (
+                      <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 mb-4">
+                        <div className="bg-dark-900/50 border border-indigo-500/30 rounded-xl p-3">
+                          <p className="text-indigo-400 text-xs">Agents</p>
+                          <p className="text-xl font-bold text-white">{userSales.length}</p>
+                        </div>
+                        <div className="bg-dark-900/50 border border-cyan-500/30 rounded-xl p-3">
+                          <p className="text-cyan-400 text-xs">Total Orders</p>
+                          <p className="text-xl font-bold text-white">{grandOrders}</p>
+                        </div>
+                        <div className="bg-dark-900/50 border border-emerald-500/30 rounded-xl p-3">
+                          <p className="text-emerald-400 text-xs">Total Sales</p>
+                          <p className="text-xl font-bold text-emerald-400">{formatAmount(grandTotal)}</p>
+                        </div>
+                        <div className="bg-dark-900/50 border border-orange-500/30 rounded-xl p-3">
+                          <p className="text-orange-400 text-xs">Avg Order (All)</p>
+                          <p className="text-xl font-bold text-orange-400">{formatAmount(grandAvg)}</p>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead className="bg-dark-900">
+                        <tr className="text-left text-dark-400 text-sm">
+                          <th className="px-4 py-3">User</th>
+                          <th className="px-4 py-3">Orders</th>
+                          <th className="px-4 py-3">Total Sales</th>
+                          <th className="px-4 py-3">Avg Order</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody>
+                        {userSales.map((user, i) => (
+                          <tr key={i} className="border-t border-dark-700 hover:bg-dark-800/50">
+                            <td className="px-4 py-3 text-white font-medium">{user.name}</td>
+                            <td className="px-4 py-3 text-dark-300">{user.orders}</td>
+                            <td className="px-4 py-3 text-cyan-400 font-semibold">{formatAmount(user.total)}</td>
+                            <td className="px-4 py-3 text-dark-300">{formatAmount(user.orders ? user.total / user.orders : 0)}</td>
+                          </tr>
+                        ))}
+                        {userSales.length === 0 && !overviewLoading && (
+                          <tr><td colSpan="4" className="px-4 py-8 text-center text-dark-400">No sales in the selected period</td></tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               ) : activeTab === 'balance' ? (
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
